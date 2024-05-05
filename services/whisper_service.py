@@ -77,13 +77,13 @@ class WhisperService:
         return self.__results.pop(id_request, "")
 
     async def __transcribe(self):
-        self.__logger.debug("Creating the nemo diarization processes...")
-        futures = await asyncio.gather(*[
-            asyncio.create_subprocess_exec(*[
-                "python", self.__nemo_process_py, id_t_request[1].temp_dir, self.__device
-            ], stderr=DEVNULL, stdout=DEVNULL)
-            for id_t_request in self.__tasks
-        ])
+        self.__logger.debug("Concatenating audios...")
+        await concat_audio([id_t_request[1].temp_dir for id_t_request in self.__tasks])
+
+        self.__logger.debug("Creating the nemo diarization process...")
+        nemo_process = await asyncio.create_subprocess_exec(*[
+            "python", self.__nemo_process_py, self.__device
+        ], stdout=DEVNULL, stderr=DEVNULL)
 
         self.__logger.debug("Creating transcribation...")
         transcribed_results: list[list[dict]] = self.__whisper.transcribe_with_vad(
@@ -91,21 +91,19 @@ class WhisperService:
             batch_size=self.__batch_size, lang_codes=[self.__language], tasks=["transcribe"]
         )
 
-        for i, result in enumerate(transcribed_results):
-            [print(j) for j in result]
-
-        self.__logger.debug("Waiting for the nemo diarization processes...")
-        await asyncio.gather(*[nemo_process.wait() for nemo_process in futures])
+        self.__logger.debug("Waiting for the nemo diarization process finish...")
+        await nemo_process.wait()
+        speaker_tss: list[list[list[int]]] = split_nemo_result(
+            await read_nemo_result("/tmp/asrme_concatenated"),
+            [int(id_t_request[1].audio_length * 1000) for id_t_request in self.__tasks]
+        )
 
         self.__logger.debug("Calculating the results...")
         for i, result in enumerate(transcribed_results):
-            speaker_ts: list[list[int]] = await read_nemo_result(self.__tasks[i][1].temp_dir)
-            print(i, speaker_ts)
-
             os.system(f"rm -rf {self.__tasks[i][1].temp_dir}/")
             self.__results[self.__tasks[i][0]] = detect_admin_and_patient(
                 assign_diarization_to_transcribation(
-                    speaker_ts,
+                    speaker_tss[i],
                     list(chain.from_iterable(seg["word_timestamps"] for seg in result))
                 )
             )

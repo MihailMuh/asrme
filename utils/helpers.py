@@ -22,7 +22,7 @@ def create_config(output_dir):
         "duration": None,
         "label": "infer",
         "text": "-",
-        "num_speakers": 2,
+        "num_speakers": 10,
         "rttm_filepath": None,
         "uem_filepath": None,
     }
@@ -91,40 +91,27 @@ def filter_missing_timestamps(word_timestamps, initial_timestamp=0, final_timest
 
 
 def detect_admin_and_patient(text: list[list[str]]) -> str:
-    projection: dict = {
-        "Speaker 0": "",
-        "Speaker 1": ""
-    }
-
-    reverse_speakers: dict = {
-        "Speaker 0": "Speaker 1",
-        "Speaker 1": "Speaker 0"
-    }
+    projection: dict = dict(set((line[0], "") for line in text))
 
     for line in text:
         speaker: str = line[0]
-        speech = line[1].strip()
+        speech: str = line[1].strip()
 
         if (not speaker) or (not speech):
             continue
 
         if not projection[speaker]:
-            if ("администратор" in speech.lower()) or ("клиника" in speech.lower()):
+            speech_lower: str = speech.lower()
+            if ("администратор" in speech_lower) or ("клиника" in speech_lower):
                 projection[speaker] = "Администратор: "
-                projection[reverse_speakers[speaker]] = "Пациент: "
-                break
-    else:
-        for line in text:
-            speaker: str = line[0]
-            speech = line[1].strip()
+            elif ("нам нужно" in speech_lower) or ("записаться" in speech_lower):
+                projection[speaker] = "Пациент: "
 
-            if (not speaker) or (not speech):
-                continue
-
+    if "".join(projection.values()).count(":") == 1:  # if detect ONLY ONE person
+        speaker_to_fill: str = "Пациент: " if "Администратор: " in projection.values() else "Администратор: "
+        for speaker in projection.keys():
             if not projection[speaker]:
-                if ("нам нужно" in speech.lower()) or ("записаться" in speech.lower()):
-                    projection[speaker] = "Пациент: "
-                    projection[reverse_speakers[speaker]] = "Администратор: "
+                projection[speaker] = speaker_to_fill
 
     result = ""
     for line in text:
@@ -184,22 +171,26 @@ async def load_audio(uid: str, audio_bytes: bytes) -> (str, str, np.ndarray):
             return temp_dir, audio_file.name, result
 
 
-async def apply_loudnorm(audio_file_name: str, mono_file_name: str):
-    cmd: list[str] = [
-        "ffmpeg",
-        "-y",
-        "-nostdin",
-        "-threads", "0",
-        "-i", audio_file_name,
-        "-ac", "1",
-        "-acodec", "pcm_s16le",
-        "-ar", "16000",
-        "-af", 'loudnorm',
-        mono_file_name
-    ]
+async def concat_audio(audio_files_dirs: list[str]):
+    async with aiofiles.tempfile.NamedTemporaryFile('w+', suffix=".txt") as txt:
+        await txt.writelines(f"file {os.path.join(tempdir, 'mono_file.wav')}\n" for tempdir in audio_files_dirs)
+        await txt.flush()
 
-    process: Process = await asyncio.create_subprocess_exec(*cmd, stdout=DEVNULL, stderr=DEVNULL)
-    await process.wait()
+        await aios.makedirs("/tmp/asrme_concatenated", exist_ok=True)
+
+        cmd: list[str] = [
+            "ffmpeg",
+            "-y",
+            "-threads", "0",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", txt.name,
+            "-c", "copy",
+            "/tmp/asrme_concatenated/mono_file.wav"
+        ]
+
+        process: Process = await asyncio.create_subprocess_exec(*cmd, stdout=DEVNULL, stderr=DEVNULL)
+        await process.wait()
 
 
 def get_speakers_list(speaker_ts: list[list[int]]) -> list[int]:
@@ -217,6 +208,23 @@ async def read_nemo_result(temp_dir_name: str) -> list[list[int]]:
             speaker_ts.append([s, e, int(line_list[11].split("_")[-1])])
 
         return speaker_ts
+
+
+def split_nemo_result(speaker_ts: list[list[int]], audio_files_lengths: list[int]) -> list[list[list[int]]]:
+    result_split: list[list[list[int]]] = []
+    current_audio_length: int = audio_files_lengths[0]
+    j = 0
+    current_segment_start_index: int = 0
+
+    for i, segment in enumerate(speaker_ts):
+        if segment[0] >= current_audio_length:
+            j += 1
+            current_audio_length += audio_files_lengths[j]
+            result_split.append(speaker_ts[current_segment_start_index: i])
+            current_segment_start_index = i
+
+    result_split.append(speaker_ts[current_segment_start_index:])
+    return result_split
 
 
 def assign_diarization_to_transcribation(
@@ -251,8 +259,13 @@ def assign_diarization_to_transcribation(
 
     phrases.append({"start": current_phrase_start, "end": current_phrase_end, "text": current_phrase.strip()})
 
-    speaker_ts_normalized = [diarization[0]]
-    for segment in diarization[1:]:
+    offset: int = diarization[0][0] - phrases[0]["start"]
+    diarization_normalized = []
+    for segment in diarization:
+        diarization_normalized.append([segment[0] - offset, segment[1] - offset, segment[2]])
+
+    speaker_ts_normalized = [diarization_normalized[0]]
+    for segment in diarization_normalized[1:]:
         if speaker_ts_normalized[-1][2] != segment[2]:
             speaker_ts_normalized.append(segment)
         else:
@@ -293,7 +306,7 @@ def assign_diarization_to_transcribation(
                 assigned.append(["Speaker " + speaker, text])
             continue
 
-        speaker_ranges: list = [0, 0]
+        speaker_ranges: list = [0, 0] * 5  # ids for 10 speakers
         for segment in suitable_segments:
             speaker_ranges[segment[2]] += min(end, segment[1]) - max(start, segment[0])
 

@@ -20,10 +20,6 @@ def load_audio(audio_signal, sr=16000, return_duration=False):
         return audio_signal
 
 
-def audio_batch_generator(audio_files):
-    return audio_files
-
-
 def pad_or_trim(array, length: int = N_SAMPLES, *, axis: int = -1):
     """
     Pad or trim the audio array to N_SAMPLES, as expected by the encoder.

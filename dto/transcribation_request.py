@@ -6,3 +6,4 @@ class TranscribationRequest:
         self.temp_dir = temp_dir
         self.audio_file_name = audio_file_name
         self.audio_file = audio_file
+        self.audio_length = len(audio_file) / 16_000

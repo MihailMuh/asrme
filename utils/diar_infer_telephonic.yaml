@@ -47,7 +47,7 @@ diarizer:
   clustering:
     parameters:
       oracle_num_speakers: False # If True, use num of speakers value provided in manifest file.
-      max_num_speakers: 2 # Max number of speakers for each recording. If an oracle number of speakers is passed, this value is ignored.
+      max_num_speakers: 10 # Max number of speakers for each recording. If an oracle number of speakers is passed, this value is ignored.
       enhanced_count_thres: 1 # If the number of segments is lower than this number, enhanced speaker counting is activated.
       max_rp_threshold: 0.1 # Determines the range of p-value search: 0 < p <= max_rp_threshold.
       sparse_search_volume: 100 # The higher the number, the more values will be examined with more time.
