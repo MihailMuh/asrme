@@ -218,9 +218,16 @@ def split_nemo_result(speaker_ts: list[list[int]], audio_files_lengths: list[int
 
     for i, segment in enumerate(speaker_ts):
         if segment[0] >= current_audio_length:
+            duration_to_minus: int = current_audio_length - audio_files_lengths[j]
+
+            result_split.append(list(
+                map(lambda seg: [seg[0] - duration_to_minus, seg[1] - duration_to_minus, seg[2]],
+                    speaker_ts[current_segment_start_index: i]
+                    )
+            ))
+
             j += 1
             current_audio_length += audio_files_lengths[j]
-            result_split.append(speaker_ts[current_segment_start_index: i])
             current_segment_start_index = i
 
     result_split.append(speaker_ts[current_segment_start_index:])
@@ -258,18 +265,15 @@ def assign_diarization_to_transcribation(
         current_phrase_end = end
 
     phrases.append({"start": current_phrase_start, "end": current_phrase_end, "text": current_phrase.strip()})
+    [print(i) for i in phrases]
 
-    offset: int = diarization[0][0] - phrases[0]["start"]
-    diarization_normalized = []
-    for segment in diarization:
-        diarization_normalized.append([segment[0] - offset, segment[1] - offset, segment[2]])
-
-    speaker_ts_normalized = [diarization_normalized[0]]
-    for segment in diarization_normalized[1:]:
+    speaker_ts_normalized = [diarization[0]]
+    for segment in diarization[1:]:
         if speaker_ts_normalized[-1][2] != segment[2]:
             speaker_ts_normalized.append(segment)
         else:
             speaker_ts_normalized[-1][1] = segment[1]
+    [print(i) for i in speaker_ts_normalized]
 
     is_one_speaker: bool = len(speaker_ts_normalized) == 1
     assigned: list[list[str]] = []

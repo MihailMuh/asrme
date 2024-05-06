@@ -8,7 +8,6 @@ import torch
 import whisper_s2t
 from dto.transcribation_request import TranscribationRequest
 from services.diarizer_service import DiarizerService
-from services.t5_service import T5Service
 from utils.helpers import *
 from whisper_s2t.backends.ctranslate2.model import WhisperModelCT2
 
@@ -20,7 +19,7 @@ class WhisperService:
         self.__arch: str = "large-v2"  # large-v3 produces MORE hallucinations
         self.__device: str = "cuda"
         self.__batch_size: int = 64
-        self.__compute_type: str = "bfloat16"
+        self.__compute_type: str = "int8"
         self.__language: str = "ru"
         self.__asr_options: dict = {
             "beam_size": 5,
@@ -34,7 +33,6 @@ class WhisperService:
         self.__tasks: list[tuple[uuid, TranscribationRequest]] = []
         self.__results: dict[uuid, str] = {}
         self.__in_process: bool = False
-        self.__nemo_process_py: Path = Path(__file__).parent.parent / "utils" / "nemo_process.py"
 
         os.system(f"rm -rf /tmp/asrme_*")
         os.environ["TOKENIZERS_PARALLELISM"] = "true"
@@ -48,9 +46,6 @@ class WhisperService:
 
         self.__logger.debug("DiarizerService initialization...")
         self.__diarizer_service = DiarizerService()
-
-        self.__logger.debug("T5Service initialization...")
-        self.__t5_service = T5Service()
 
         self.__logger.debug(f"WhisperService initialized!")
 
@@ -107,11 +102,6 @@ class WhisperService:
                 speaker_tss[i],
                 list(chain.from_iterable(seg["word_timestamps"] for seg in result))
             )
-            for j, phrase in enumerate(
-                    self.__t5_service.normalize([speaker_phrase[1] for speaker_phrase in assigned_speech])
-            ):
-                assigned_speech[j][1] = phrase
-
             self.__results[self.__tasks[i][0]] = detect_admin_and_patient(assigned_speech)
 
             self.__logger.debug(f"Calculated {i + 1}/{len(transcribed_results)} result")
@@ -119,7 +109,6 @@ class WhisperService:
     def dispose(self):
         del self.__whisper
         del self.__diarizer_service
-        del self.__t5_service
         torch.cuda.empty_cache()
 
         os.system(f"rm -rf /tmp/asrme_*")
