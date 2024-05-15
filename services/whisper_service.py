@@ -28,6 +28,7 @@ class WhisperService:
             "return_scores": False,
             "return_no_speech_prob": False,
             "sampling_temperature": 1,
+            "word_aligner_model": "tiny",
         }
 
         self.__tasks: list[tuple[uuid, TranscribationRequest]] = []
@@ -57,7 +58,7 @@ class WhisperService:
             return id_response
 
         while self.__in_process:
-            await asyncio.sleep(0.100)
+            await asyncio.sleep(0.300)
 
         if len(self.__tasks) == 4:
             self.__in_process = True
@@ -103,8 +104,6 @@ class WhisperService:
                 list(chain.from_iterable(seg["word_timestamps"] for seg in result))
             )
             self.__results[self.__tasks[i][0]] = detect_admin_and_patient(assigned_speech)
-
-            self.__logger.debug(f"Calculated {i + 1}/{len(transcribed_results)} result")
 
     def dispose(self):
         del self.__whisper

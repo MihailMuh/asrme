@@ -1,10 +1,10 @@
 import logging
 
+import nemo.utils
 from nemo.collections.asr.models import NeuralDiarizer
 
 from utils.helpers import *
 
-import nemo.utils
 
 class DiarizerService:
     def __init__(self):

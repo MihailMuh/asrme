@@ -38,58 +38,6 @@ def create_config(output_dir):
     return config
 
 
-def _get_next_start_timestamp(word_timestamps, current_word_index, final_timestamp):
-    # if current word is the last word
-    if current_word_index == len(word_timestamps) - 1:
-        return word_timestamps[current_word_index]["start"]
-
-    next_word_index = current_word_index + 1
-    while current_word_index < len(word_timestamps) - 1:
-        if word_timestamps[next_word_index].get("start") is None:
-            # if next word doesn't have a start timestamp
-            # merge it with the current word and delete it
-            word_timestamps[current_word_index]["word"] += (
-                    " " + word_timestamps[next_word_index]["word"]
-            )
-
-            word_timestamps[next_word_index]["word"] = None
-            next_word_index += 1
-            if next_word_index == len(word_timestamps):
-                return final_timestamp
-
-        else:
-            return word_timestamps[next_word_index]["start"]
-
-
-def filter_missing_timestamps(word_timestamps, initial_timestamp=0, final_timestamp=None) -> list:
-    if len(word_timestamps) == 0:
-        return []
-
-    # handle the first and last word
-    if word_timestamps[0].get("start") is None:
-        word_timestamps[0]["start"] = (
-            initial_timestamp if initial_timestamp is not None else 0
-        )
-        word_timestamps[0]["end"] = _get_next_start_timestamp(
-            word_timestamps, 0, final_timestamp
-        )
-
-    result = [
-        word_timestamps[0],
-    ]
-
-    for i, ws in enumerate(word_timestamps[1:], start=1):
-        # if ws doesn't have a start and end
-        # use the previous end as start and next start as end
-        if ws.get("start") is None and ws.get("word") is not None:
-            ws["start"] = word_timestamps[i - 1]["end"]
-            ws["end"] = _get_next_start_timestamp(word_timestamps, i, final_timestamp)
-
-        if ws["word"] is not None:
-            result.append(ws)
-    return result
-
-
 def detect_admin_and_patient(text: list[list[str]]) -> str:
     projection: dict = dict(set((line[0], "") for line in text))
 
@@ -193,10 +141,6 @@ async def concat_audio(audio_files_dirs: list[str]):
         await process.wait()
 
 
-def get_speakers_list(speaker_ts: list[list[int]]) -> list[int]:
-    return list(map(lambda segment: segment[-1], speaker_ts))
-
-
 async def read_nemo_result(temp_dir_name: str) -> list[list[int]]:
     speaker_ts: list[list[int]] = []
     async with aiofiles.open(os.path.join(temp_dir_name, "pred_rttms", "mono_file.rttm"), "r") as f:
@@ -211,6 +155,14 @@ async def read_nemo_result(temp_dir_name: str) -> list[list[int]]:
 
 
 def split_nemo_result(speaker_ts: list[list[int]], audio_files_lengths: list[int]) -> list[list[list[int]]]:
+    def add_to_result(end_index: int):
+        duration_to_minus: int = current_audio_length - audio_files_lengths[j]
+
+        result_split.append(list(map(
+            lambda seg: [seg[0] - duration_to_minus, seg[1] - duration_to_minus, seg[2]],
+            speaker_ts[current_segment_start_index: end_index]
+        )))
+
     result_split: list[list[list[int]]] = []
     current_audio_length: int = audio_files_lengths[0]
     j = 0
@@ -218,19 +170,13 @@ def split_nemo_result(speaker_ts: list[list[int]], audio_files_lengths: list[int
 
     for i, segment in enumerate(speaker_ts):
         if segment[0] >= current_audio_length:
-            duration_to_minus: int = current_audio_length - audio_files_lengths[j]
-
-            result_split.append(list(
-                map(lambda seg: [seg[0] - duration_to_minus, seg[1] - duration_to_minus, seg[2]],
-                    speaker_ts[current_segment_start_index: i]
-                    )
-            ))
+            add_to_result(i)
 
             j += 1
             current_audio_length += audio_files_lengths[j]
             current_segment_start_index = i
 
-    result_split.append(speaker_ts[current_segment_start_index:])
+    add_to_result(len(speaker_ts))
     return result_split
 
 
@@ -265,7 +211,6 @@ def assign_diarization_to_transcribation(
         current_phrase_end = end
 
     phrases.append({"start": current_phrase_start, "end": current_phrase_end, "text": current_phrase.strip()})
-    [print(i) for i in phrases]
 
     speaker_ts_normalized = [diarization[0]]
     for segment in diarization[1:]:
@@ -273,7 +218,6 @@ def assign_diarization_to_transcribation(
             speaker_ts_normalized.append(segment)
         else:
             speaker_ts_normalized[-1][1] = segment[1]
-    [print(i) for i in speaker_ts_normalized]
 
     is_one_speaker: bool = len(speaker_ts_normalized) == 1
     assigned: list[list[str]] = []
