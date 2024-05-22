@@ -140,6 +140,10 @@ async def concat_audio(audio_files_dirs: list[str]):
         process: Process = await asyncio.create_subprocess_exec(*cmd, stdout=DEVNULL, stderr=DEVNULL)
         await process.wait()
 
+        async with aiofiles.open("/tmp/asrme_concatenated/mono_file.wav", "rb") as file:
+            result: np.ndarray = np.frombuffer(await file.read(), np.int16).flatten().astype(np.float32) / 32768.0
+
+            return result
 
 async def read_nemo_result(temp_dir_name: str) -> list[list[int]]:
     speaker_ts: list[list[int]] = []

@@ -8,7 +8,7 @@ name: &name "ClusterDiarizer"
 
 num_workers: 1
 sample_rate: 16000
-batch_size: 180
+batch_size: 600
 device: "cuda" # can specify a specific device, i.e: cuda:1 (default cuda if cuda available, else cpu)
 verbose: False # enable additional logging
 
@@ -59,7 +59,7 @@ diarizer:
     model_path: diar_msdd_telephonic # .nemo local dto path or pretrained dto name for multiscale diarization decoder (MSDD)
     parameters:
       use_speaker_model_from_ckpt: False # If True, use speaker embedding dto in checkpoint. If False, the provided speaker embedding dto in config will be used.
-      infer_batch_size: 180 # Batch size for MSDD inference.
+      infer_batch_size: 600 # Batch size for MSDD inference.
       sigmoid_threshold: [0.7] # Sigmoid threshold for generating binarized speaker labels. The smaller the more generous on detecting overlaps.
       seq_eval_mode: False # If True, use oracle number of speaker and evaluate F1 score for the given speaker sequences. Default is False.
       split_infer: True # If True, break the input audio clip to short sequences and calculate cluster average embeddings for inference.

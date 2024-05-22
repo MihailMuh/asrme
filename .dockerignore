@@ -1,12 +1,12 @@
 venv/
 __pycache__/
-.idea/
 model/
+.*
 cache/
 
-*.env
 *.log
 *.mp3
 *.wav
 
 post_audio.py
+Dockerfile
